@@ -13,9 +13,9 @@ An R script for archiving  the [Water Quality Portal (WQP)](https://www.waterqua
   - Sample Results (Biological)
   - Sample Results (Narrow)
   - Sampling Activity
-  - Sampling Activity Metrics*
-  - Biological Habitat Metrics*
-  - Result Detection Quantitation Limit Data*
+  - Sampling Activity Metrics
+  - Biological Habitat Metrics
+  - Result Detection Quantitation Limit Data
 - Handles both countries with and without county-level administrative divisions
 - Creates organized directory structure based on geographic hierarchy
 - Includes retry logic
@@ -62,37 +62,32 @@ locations/
   - httr
   - fs
   - jsonlite
+  - furrr
+  - progressr
+  - parallelly
 
 Install dependencies:
 ```r
-install.packages(c("tidyverse", "httr", "fs", "jsonlite"))
+install.packages(c("tidyverse", "httr", "fs", "jsonlite", "furrr", "progressr", "parallelly"))
 ```
 
 ## Usage
 
 1. Clone the repository:
 ```bash
-git clone https://github.com/yourusername/wqp-backup.git
+git clone https://github.com/DOI-USGS/wqp-backup.git
 cd wqp-backup
 ```
 
-2. Basic usage - download all data types:
+2. Run the script:
 ```r
-source("water_quality_downloader.R")
-walk(names(CONFIG$endpoints), download_water_quality_data)
+source("run.R")
 ```
 
-3. Download specific data types:
-```r
-# Download only physical/chemical results
-download_water_quality_data("physChem")
-
-# Download only biological results
-download_water_quality_data("biological")
-
-# Download only site information
-download_water_quality_data("sites")
-```
+The script will:
+1. Create the complete directory structure
+2. Download data for each endpoint in sequence
+3. Process locations in parallel within each endpoint
 
 ## Configuration
 
@@ -103,21 +98,32 @@ CONFIG <- list(
   base_url = "https://www.waterqualitydata.us/data",
   endpoints = list(...),
   base_dir = "locations",
-  county_countries = c("US", "FM", "PS", "RM")
+  location_types = list(
+    county_countries = c("US", "FM", "PS", "RM"),
+    state_countries = c("CA", "MX")
+  ),
+  parallel = list(
+    workers = parallelly::availableCores() - 1,  # Use all cores except one
+    chunk_size = 100  # Number of locations to process in each chunk
+  )
 )
 ```
 
 - `base_url`: Base URL for the Water Quality Portal API
 - `endpoints`: List of endpoints and their configurations
 - `base_dir`: Base directory for downloaded data
-- `county_countries`: Countries that use county-level administrative divisions
+- `location_types`: Geographic division configurations
+- `parallel`: Parallel processing settings
+  - `workers`: Number of parallel workers to use
+  - `chunk_size`: Number of locations to process in each chunk
 
 ## Logging
 
-The tool creates detailed logs for each download session:
-- Located in the base directory as `download_log_{endpoint}.txt`
-- Includes timestamps, success/failure status, and detailed error information
-- Provides summary statistics at the end of each run
+The tool creates detailed logs for each endpoint:
+- Failed downloads logged to `failed_{endpoint}.txt`
+- Includes timestamps and failure details
+- Provides summary statistics after each endpoint
+
 
 ## Rate Limiting
 
