@@ -134,7 +134,7 @@ General issue/ PR etiquette
 
 This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
 
-## Acknowledgments
+## References
 
-- [Water Quality Portal](https://www.waterqualitydata.us/) for providing the data and API
+- Water Quality Portal. Washington (DC): National Water Quality Monitoring Council, United States Geological Survey (USGS), Environmental Protection Agency (EPA); 2021. https://doi.org/10.5066/P9QRKUVJ.
 
