@@ -19,8 +19,9 @@ An R script for archiving  the [Water Quality Portal (WQP)](https://www.waterqua
 - Handles both countries with and without county-level administrative divisions
 - Creates organized directory structure based on geographic hierarchy
 - Includes retry logic
-- Comprehensive logging and progress tracking
-- Rate limiting to respect API endpoints
+- Logs failures
+- Parallelizes each endpoint
+- Progress bars per endpoint
 
 ## Directory Structure
 
