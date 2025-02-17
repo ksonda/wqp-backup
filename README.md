@@ -75,7 +75,7 @@ install.packages(c("tidyverse", "httr", "fs", "jsonlite", "furrr", "progressr", 
 
 1. Clone the repository:
 ```bash
-git clone https://github.com/DOI-USGS/wqp-backup.git
+git clone https://github.com/ksonda/wqp-backup.git
 cd wqp-backup
 ```
 
