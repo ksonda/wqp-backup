@@ -7,6 +7,12 @@ library(jsonlite)
 # Configuration
 CONFIG <- list(
   base_url = "https://www.waterqualitydata.us/data",
+  codes_url = "https://www.waterqualitydata.us/Codes",
+  code_endpoints = list(
+    country = "countrycode",
+    county = "countycode",
+    state = "statecode"
+  ),
   endpoints = list(
     sites = list(
       path = "Station/search",
@@ -31,6 +37,26 @@ CONFIG <- list(
     biological = list(
       path = "Result/search",
       params = list(dataProfile = "biological")
+    ),
+    narrowResult = list(
+      path = "Result/search",
+      params = list(dataProfile = "narrowResult")
+    ),
+    activity = list(
+      path = "Activity/search",
+      params = list(dataProfile = "activityAll")
+    ),
+    activityMetric = list(
+      path = "ActivityMetric/search",
+      params = list()
+    ),
+    resultDetectionQuantitationLimit = list(
+      path = "ResultDetectionQuantitationLimit/search",
+      params = list()
+    ),
+    biologicalMetric = list(
+      path = "BiologicalMetric/search",
+      params = list()
     )
   ),
   base_dir = "locations",
@@ -219,8 +245,31 @@ download_water_quality_data <- function(endpoint_name) {
   
   endpoint_config <- CONFIG$endpoints[[endpoint_name]]
   
-  # Get county codes
-  counties <- fromJSON("https://www.waterqualitydata.us/Codes/countycode?mimeType=json")$codes
+  # Function to get codes from the API
+  get_codes <- function(code_type) {
+    if (!code_type %in% names(CONFIG$code_endpoints)) {
+      stop(sprintf("Invalid code type: %s", code_type))
+    }
+    
+    url <- sprintf("%s/%s?mimeType=json", 
+                   CONFIG$codes_url,
+                   CONFIG$code_endpoints[[code_type]])
+    
+    fromJSON(url)$codes
+  }
+  
+  # Get both county and country codes
+  counties <- get_codes("county")
+  countries <- get_codes("country")
+  
+  # For countries in the county list, we'll process them normally
+  # For other countries, we'll create country-level entries
+  additional_locations <- countries %>%
+    filter(!value %in% unique(gsub(":.*", "", counties$value))) %>%
+    mutate(
+      value = value,  # Just the country code
+      desc = desc     # Country name
+    )
   
   # Create base directory
   dir_create(CONFIG$base_dir)
@@ -229,8 +278,21 @@ download_water_quality_data <- function(endpoint_name) {
   log_file <- file.path(CONFIG$base_dir, paste0("download_log_", endpoint_name, ".txt"))
   cat(format(Sys.time()), sprintf("Starting %s downloads\n", endpoint_name), file = log_file)
   
-  # Process locations
-  valid_locations <- map(seq_len(nrow(counties)), ~process_location(counties[.x, ]))
+  # Process locations from county codes
+  county_locations <- map(seq_len(nrow(counties)), ~process_location(counties[.x, ]))
+  
+  # Process additional country-level locations
+  country_locations <- map(seq_len(nrow(additional_locations)), ~{
+    location_data <- additional_locations[.x, ]
+    list(
+      country_code = location_data$value,
+      location_type = "country",
+      path = file.path(CONFIG$base_dir, location_data$value)
+    )
+  })
+  
+  # Combine and clean up locations
+  valid_locations <- c(county_locations, country_locations)
   valid_locations <- compact(valid_locations)
   
   # Setup progress tracking
@@ -282,6 +344,4 @@ download_water_quality_data <- function(endpoint_name) {
 dir_create(CONFIG$base_dir)
 
 # Download data for each endpoint
-#walk(names(CONFIG$endpoints), download_water_quality_data)
-download_water_quality_data("sites")
-download_water_quality_data("biological")
+walk(names(CONFIG$endpoints), download_water_quality_data)
