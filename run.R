@@ -1,4 +1,4 @@
-# run.R
+# utils.R
 library(tidyverse)
 library(httr)
 library(fs)
@@ -31,31 +31,16 @@ CONFIG <- list(
     biological = list(
       path = "Result/search",
       params = list(dataProfile = "biological")
-    ),
-    narrowResult = list(
-      path = "Result/search",
-      params = list(dataProfile = "narrowResult")
-    ),
-    activity = list(
-      path = "Activity/search",
-      params = list(dataProfile = "activityAll")
-    ),
-    activityMetric = list(
-      path = "ActivityMetric/search",
-      params = list()
-    ),
-    resultDetectionQuantitationLimit = list(
-      path = "ResultDetectionQuantitationLimit/search",
-      params = list()
-    ),
-    biologicalMetric = list(
-      path = "BiologicalMetric/search",
-      params = list()
     )
   ),
   base_dir = "locations",
-  # Countries that use county system
-  county_countries = c("US", "FM", "PS", "RM")
+  # Location handling configurations
+  location_types = list(
+    county_countries = c("US", "FM", "PS", "RM"),  # Countries with county system
+    state_countries = c("CA", "MX"),               # Countries with state system only
+    # All other countries handled at country level only
+    ocean_codes = c("EM", "LE", "LH", "OA", "OI", "OP", "QO", "QS", "ZC")  # Ocean/Lake codes
+  )
 )
 
 # Helper Functions
@@ -97,74 +82,96 @@ download_data <- function(url, output_file, max_retries = 3) {
   return(FALSE)
 }
 
+# Determine location type
+get_location_type <- function(country_code) {
+  if (country_code %in% CONFIG$location_types$county_countries) return("county")
+  if (country_code %in% CONFIG$location_types$state_countries) return("state")
+  if (country_code %in% CONFIG$location_types$ocean_codes) return("ocean")
+  return("country")
+}
+
 # Location processing function
 process_location <- function(location_data) {
   codes <- strsplit(location_data$value, ":")[[1]]
-  if (length(codes) < 2) return(NULL)  # Need at least country and state
+  if (length(codes) < 1) return(NULL)
   
   country_code <- codes[1]
-  state_code <- codes[2]
-  county_code <- if(length(codes) >= 3) codes[3] else NULL
+  location_type <- get_location_type(country_code)
   
-  # Split description into components
+  # Get basic location info
   parts <- strsplit(location_data$desc, ",")[[1]]
-  if (length(parts) < 2) return(NULL)  # Need at least country and state
   
-  # Clean names
-  state_name <- clean_name(trimws(parts[2]))
-  county_name <- if(length(parts) >= 3) clean_name(trimws(parts[3])) else NULL
+  # Process based on location type
+  result <- list(
+    country_code = country_code,
+    location_type = location_type
+  )
   
-  # Skip if state is unspecified
-  if (state_name %in% c("", "Unspecified")) return(NULL)
-  
-  # Handle countries with and without counties differently
-  if (country_code %in% CONFIG$county_countries) {
-    # For countries with counties, require valid county information
-    if (is.null(county_code) || county_code == "000" || 
-        is.null(county_name) || county_name %in% c("", "Unspecified")) {
-      return(NULL)
-    }
+  if (location_type == "county") {
+    # Need all three levels for county-based countries
+    if (length(codes) < 3 || length(parts) < 3) return(NULL)
     
-    # Full path with county
-    path <- file.path(
+    state_code <- codes[2]
+    county_code <- codes[3]
+    
+    if (state_code == "00" || county_code == "000") return(NULL)
+    
+    state_name <- clean_name(trimws(parts[2]))
+    county_name <- clean_name(trimws(parts[3]))
+    
+    if (any(c(state_name, county_name) %in% c("", "Unspecified"))) return(NULL)
+    
+    result$state_code <- state_code
+    result$county_code <- county_code
+    result$state_name <- state_name
+    result$county_name <- county_name
+    result$path <- file.path(
       CONFIG$base_dir,
       country_code,
       paste0(state_code, "_", state_name),
       paste0(county_code, "_", county_name)
     )
-  } else {
-    # For countries without counties, only use state level
+    
+  } else if (location_type == "state") {
+    # Need state level for state-based countries
+    if (length(codes) < 2 || length(parts) < 2) return(NULL)
+    
+    state_code <- codes[2]
     if (state_code == "00") return(NULL)
     
-    # Path without county
-    path <- file.path(
+    state_name <- clean_name(trimws(parts[2]))
+    if (state_name %in% c("", "Unspecified")) return(NULL)
+    
+    result$state_code <- state_code
+    result$state_name <- state_name
+    result$path <- file.path(
       CONFIG$base_dir,
       country_code,
       paste0(state_code, "_", state_name)
     )
+    
+  } else {
+    # Country or ocean level only
+    result$path <- file.path(CONFIG$base_dir, country_code)
   }
   
-  list(
-    country_code = country_code,
-    state_code = state_code,
-    county_code = county_code,
-    state_name = state_name,
-    county_name = county_name,
-    path = path,
-    has_counties = country_code %in% CONFIG$county_countries
-  )
+  return(result)
 }
 
 # Build URL with parameters
 build_url <- function(endpoint_config, location_info) {
-  # Start with base parameters for country and state
+  # Start with country code
   params <- list(
-    countrycode = format_code(location_info$country_code),
-    statecode = format_code(paste0(location_info$country_code, ":", location_info$state_code))
+    countrycode = format_code(location_info$country_code)
   )
   
-  # Add county code only for countries that use counties
-  if (location_info$has_counties && !is.null(location_info$county_code)) {
+  # Add state code if present
+  if (!is.null(location_info$state_code)) {
+    params$statecode <- format_code(paste0(location_info$country_code, ":", location_info$state_code))
+  }
+  
+  # Add county code if present
+  if (!is.null(location_info$county_code)) {
     params$countycode <- format_code(paste0(
       location_info$country_code, ":",
       location_info$state_code, ":",
@@ -249,7 +256,7 @@ download_water_quality_data <- function(endpoint_name) {
         file = log_file, append = TRUE)
     
     setTxtProgressBar(pb, i)
-    #   Sys.sleep(1)  # Rate limiting
+    Sys.sleep(1)  # Rate limiting
   }
   
   close(pb)
@@ -275,8 +282,6 @@ download_water_quality_data <- function(endpoint_name) {
 dir_create(CONFIG$base_dir)
 
 # Download data for each endpoint
-walk(names(CONFIG$endpoints), download_water_quality_data)
-
-# Or download specific endpoints:
-# download_water_quality_data("physChem")
-# download_water_quality_data("biological")
+#walk(names(CONFIG$endpoints), download_water_quality_data)
+download_water_quality_data("sites")
+download_water_quality_data("biological")
