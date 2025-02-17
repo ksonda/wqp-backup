@@ -72,8 +72,8 @@ install.packages(c("tidyverse", "httr", "fs", "jsonlite"))
 
 1. Clone the repository:
 ```bash
-git clone https://github.com/yourusername/water-quality-collector.git
-cd water-quality-collector
+git clone https://github.com/yourusername/wqp-backup.git
+cd wqp-backup
 ```
 
 2. Basic usage - download all data types:
